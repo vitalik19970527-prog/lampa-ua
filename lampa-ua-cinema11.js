@@ -1,106 +1,118 @@
 (function () {
-    'use strict';
+  'use strict';
 
-    function UAOnline(object) {
-        var network = new Lampa.Reguest();
-        var scroll  = new Lampa.Scroll({mask: true, over: true});
-        var items   = [];
-        var html    = $('<div></div>');
-        var body    = $('<div class="category-full"></div>');
-        
-        this.create = function () {
-            var _this = this;
-            Lampa.Loading.show();
+  /** ===============================
+   *  НАЛАШТУВАННЯ UA-ФІЛЬТРУ
+   * =============================== */
 
-            var title = object.card.title || object.card.name;
-            
-            // Емуляція пошуку по українських джерелах (Ashdi, Eneyida)
-            // Використовуємо структуру обробки запитів з вашого файлу
-            setTimeout(function() {
-                Lampa.Loading.hide();
-                _this.display([
-                    {
-                        title: 'Українська озвучка (HD)',
-                        quality: '1080p',
-                        translation: 'Офіційний дубляж',
-                        url: 'ashdi'
-                    },
-                    {
-                        title: 'Українська (Багатоголосий)',
-                        quality: '720p',
-                        translation: 'Eneyida',
-                        url: 'eneyida'
-                    }
-                ]);
-            }, 800);
+  const UA_TRANSLATIONS = [
+    'україн',
+    'ukrain',
+    'ua',
+    'дубляж',
+    'дубльований',
+    'ene',
+    'еней',
+    'eneida',
+    'ashdi',
+    'ашді',
+    'ukr'
+  ];
 
-            return this.render();
-        };
+  function isUATranslation(name) {
+    if (!name) return false;
+    name = name.toLowerCase();
+    return UA_TRANSLATIONS.some(word => name.includes(word));
+  }
 
-        this.display = function(results) {
-            var _this = this;
-            results.forEach(function (res) {
-                var item = $(`<div class="online-list__item selector">
-                    <div class="online-list__title">${res.title}</div>
-                    <div class="online-list__quality">${res.quality} / ${res.translation}</div>
-                </div>`);
+  /** ===============================
+   *  ХУК В ONLINE MOD
+   * =============================== */
 
-                item.on('hover:enter', function () {
-                    // Викликаємо пошук онлайн через робочі UA джерела
-                    Lampa.Component.add('online', {
-                        title: res.title,
-                        url: '',
-                        card: object.card
-                    });
-                });
+  function patchOnlineMod() {
+    if (!Lampa || !Lampa.Component || !Lampa.Component.get) return;
 
-                body.append(item);
-            });
+    const Online = Lampa.Component.get('online');
+    if (!Online || Online.__ua_patched) return;
 
-            html.append(scroll.render());
-            scroll.append(body);
-            
-            // Активуємо навігацію, щоб не було "порожньо"
-            Lampa.Controller.add('ua_cinema_list', {
-                toggle: function () {
-                    Lampa.Controller.collectionSet(html);
-                    Lampa.Controller.make(html);
-                },
-                up: function () {},
-                down: function () {},
-                back: function () {
-                    Lampa.Activity.backward();
-                }
-            });
-            Lampa.Controller.toggle('ua_cinema_list');
-        };
+    Online.__ua_patched = true;
 
-        this.render = function () { return html; };
-    }
+    const originalAppend = Online.prototype.append;
 
-    function start() {
-        Lampa.Component.add('ua_cinema_mod', UAOnline);
+    Online.prototype.append = function (items) {
+      if (!items || !items.length) {
+        this.empty('Немає української озвучки');
+        return;
+      }
 
-        setInterval(function() {
-            var container = $('.full-start-new__buttons, .full-start__buttons');
-            if (container.length && !$('.button--ua-pro-ok').length) {
-                var btn = $(`<div class="full-start__button selector button--ua-pro-ok">
-                    <span style="color: #FFD700; font-weight: bold;">🇺🇦 ДИВИТИСЬ UA</span>
-                </div>`);
+      // ФІЛЬТРУЄМО ТІЛЬКИ UA
+      const uaItems = items.filter(item => {
+        if (item.translate_voice) {
+          return isUATranslation(item.translate_voice);
+        }
 
-                btn.on('click', function () {
-                    Lampa.Activity.push({
-                        title: 'UA Кінотеатр',
-                        component: 'ua_cinema_mod',
-                        card: Lampa.Activity.active().card
-                    });
-                });
+        if (item.title) {
+          return isUATranslation(item.title);
+        }
 
-                container.prepend(btn);
-                if(Lampa.Controller.active().name == 'full_start') Lampa.Controller.toggle('full_start');
-            }
-        }, 1000);
-    }
+        if (item.info) {
+          return isUATranslation(item.info);
+        }
 
-    if (window.Lampa) start();
+        return false;
+      });
+
+      if (!uaItems.length) {
+        this.empty('Немає української озвучки');
+        return;
+      }
+
+      originalAppend.call(this, uaItems);
+    };
+  }
+
+  /** ===============================
+   *  КНОПКА 🇺🇦 UA КІНОТЕАТР
+   * =============================== */
+
+  function addUAButton() {
+    const container = document.querySelector(
+      '.full-start-new__buttons, .full-start__buttons'
+    );
+    if (!container || container.querySelector('.button--ua-only')) return;
+
+    const btn = document.createElement('div');
+    btn.className = 'full-start__button selector button--ua-only';
+    btn.innerHTML = `
+      <span style="color:#ffd700;font-weight:bold">
+        🇺🇦 ДИВИТИСЬ УКРАЇНСЬКОЮ
+      </span>
+    `;
+
+    btn.addEventListener('click', () => {
+      const activity = Lampa.Activity.active();
+      if (!activity || !activity.card) return;
+
+      activity.card.ua_only = true;
+
+      Lampa.Activity.push({
+        title: 'UA Кінотеатр',
+        component: 'online',
+        card: activity.card
+      });
+    });
+
+    container.prepend(btn);
+  }
+
+  /** ===============================
+   *  СТАРТ
+   * =============================== */
+
+  function start() {
+    patchOnlineMod();
+    setInterval(addUAButton, 1000);
+  }
+
+  if (window.Lampa) start();
 })();
