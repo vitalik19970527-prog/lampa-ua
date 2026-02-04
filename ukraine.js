@@ -10,34 +10,42 @@
             var network = new Lampa.Regard();
             var scroll = new Lampa.Scroll({mask: true, over: true});
             var html = $('<div class="directory-layers"></div>');
+            
             this.create = function () {
                 html.append(scroll.render());
                 var m = object.movie || {};
-                var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(m.title || m.name) + '&year=' + (m.release_date || m.first_air_date || '').slice(0, 4);
+                var title = m.title || m.name;
+                var year = (m.release_date || m.first_air_date || '').slice(0, 4);
+                var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(title) + '&year=' + year;
+                
                 network.silent(url, function (data) {
                     if (data && data.length) {
                         data.forEach(function(item) {
-                            if (item.file && /(ua|україн)/i.test(item.title || '')) {
+                            var t = (item.title || '').toLowerCase();
+                            if (item.file && (t.indexOf('ua') > -1 || t.indexOf('україн') > -1)) {
                                 var card = Lampa.Template.get('button', {title: '🇺🇦 ' + item.title});
-                                card.on('hover:enter', function () { Lampa.Player.play({ url: item.file, title: item.title }); });
+                                card.on('hover:enter', function () { 
+                                    Lampa.Player.play({ url: item.file, title: item.title }); 
+                                });
                                 scroll.append(card);
                             }
                         });
-                    } else { Lampa.Noty.show('Нічого не знайдено'); }
+                    } else { 
+                        Lampa.Noty.show('Української озвучки не знайдено'); 
+                    }
                 });
             };
             this.render = function () { return html; };
         });
 
-        // Функція вставки кнопки, яка працює незалежно
+        // Пряма вставка через інтервал (найнадійніший метод)
         setInterval(function() {
-            // Шукаємо саме ваш контейнер
             var container = $('.full-start-new__buttons');
             
-            if (container.length && !container.find('.dvua-btn').length) {
+            if (container.length && !$('.dvua-btn').length) {
                 var btn = $(`
                     <div class="full-start__button selector dvua-btn" style="display: flex !important;">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 10px;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;">
                             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
                             <path d="M12 8V16M8 12H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         </svg>
@@ -46,17 +54,21 @@
                 `);
 
                 btn.on('hover:enter', function () {
-                    // Знаходимо дані фільму через об'єкт Lampa, якщо вони доступні
-                    var movieData = Lampa.Activity.active().card || Lampa.Activity.active().object.movie;
-                    Lampa.Controller.push('davay_ua', { movie: movieData });
+                    var active = Lampa.Activity.active();
+                    var movieData = active.card || (active.object && active.object.movie);
+                    if (movieData) {
+                        Lampa.Controller.push('davay_ua', { movie: movieData });
+                    } else {
+                        Lampa.Noty.show('Помилка: дані фільму не знайдено');
+                    }
                 });
 
-                // Вставляємо після кнопки "Дивитись"
+                // Вставляємо після кнопки "Дивитись" (клас button--play)
                 var playBtn = container.find('.button--play');
                 if (playBtn.length) playBtn.after(btn);
                 else container.prepend(btn);
 
-                // Оновлюємо навігацію пульта
+                // Оновлюємо навігацію пульта, щоб він "бачив" нову кнопку
                 Lampa.Controller.add('full_start', {
                     toggle: function () {
                         Lampa.Controller.collectionSet(container);
@@ -64,7 +76,7 @@
                     }
                 });
             }
-        }, 1000); // Перевіряємо кожну секунду
+        }, 1000);
     }
 
     if (window.Lampa) init();
