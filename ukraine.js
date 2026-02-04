@@ -4,8 +4,8 @@
     if (window.Lampa && Lampa.Plugins) {
         Lampa.Plugins.add({
             name: 'Давай UA',
-            version: '1.2.0',
-            description: 'Українська озвучка',
+            version: '1.3.0',
+            description: 'Пошук української озвучки',
             type: 'video',
             author: 'Vitalik'
         });
@@ -30,6 +30,7 @@
                 
                 network.silent(url, function (data) {
                     if (data && data.length) {
+                        var count = 0;
                         data.forEach(function(item) {
                             var t = (item.title || '').toLowerCase();
                             if (item.file && (t.indexOf('ua') > -1 || t.indexOf('україн') > -1)) {
@@ -38,35 +39,42 @@
                                     Lampa.Player.play({ url: item.file, title: item.title }); 
                                 });
                                 scroll.append(card);
+                                count++;
                             }
                         });
+                        if (count === 0) Lampa.Noty.show('Української озвучки не знайдено');
                     } else { Lampa.Noty.show('Нічого не знайдено'); }
                 });
             };
             this.render = function () { return html; };
         });
 
-        // ПОВНІСТЮ ОНОВЛЕНА ЛОГІКА КНОПКИ
+        // ПРИМУСОВА ВСТАВКА КНОПКИ
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complite' || e.type == 'ready') {
-                var addBtn = function() {
-                    var container = e.object.container.find('.full-start__buttons');
-                    if (container.length && !container.find('.dvua-btn').length) {
-                        var btn = $('<div class="full-start__button selector dvua-btn"><span>Давай UA</span></div>');
+                var render = function() {
+                    // Шукаємо будь-яке місце для кнопки: блок кнопок або просто під опис
+                    var parent = e.object.container.find('.full-start__buttons, .full-start, .full-info__content');
+                    
+                    if (parent.length && !e.object.container.find('.dvua-btn').length) {
+                        var btn = $('<div class="full-start__button selector dvua-btn" style="background: #243b55; border: 1px solid #00c6ff; margin-top: 10px;"><span>🇺🇦 Давай UA</span></div>');
+                        
                         btn.on('hover:enter', function () { 
                             Lampa.Controller.push('davay_ua', { movie: e.data.movie }); 
                         });
-                        container.append(btn);
-                        // Оновлюємо контролер, щоб кнопка стала активною для вибору
-                        if (Lampa.Controller.current().name == 'full_start') {
-                            Lampa.Controller.toggle('full_start');
-                        }
+
+                        // Вставляємо в початок блоку кнопок або в кінець контенту
+                        if (parent.hasClass('full-start__buttons')) parent.prepend(btn);
+                        else parent.append(btn);
+                        
+                        // Оновлення навігації
+                        Lampa.Controller.toggle('full_start');
                     }
                 };
-                
-                // Пробуємо додати кнопку одразу і ще раз через секунду для гарантії
-                addBtn();
-                setTimeout(addBtn, 1000);
+
+                // Пробуємо кілька разів, бо інтерфейс може довантажуватись
+                setTimeout(render, 500);
+                setTimeout(render, 1500);
             }
         });
     }
