@@ -1,129 +1,125 @@
 (function () {
     'use strict';
 
-    // Сховище для логіки плагіна
-    var UA_Worker = {
-        name: 'Давай UA',
-        version: '1.5.0',
-        description: 'Пошук української озвучки через API Lampa',
+    var DavayUA = function () {
+        var _this = this;
+        var network = new Lampa.Regard();
         
-        // Функція ініціалізації за вашим зразком
-        init: function () {
-            this.registerComponent();
-            this.listenEvents();
-            console.log('UA Plugin: Initialized');
-        },
+        // Функція ініціалізації (як у вашому файлі)
+        this.init = function () {
+            this.listen();
+        };
 
-        // Реєстрація вікна зі списком серій/файлів
-        registerComponent: function () {
-            var _this = this;
-            Lampa.Component.add('davay_ua_modal', function (object) {
-                var network = new Lampa.Regard();
+        // Головний метод пошуку (самостійний парсер)
+        this.search = function (object) {
+            var title = object.movie.title || object.movie.name;
+            var year = (object.movie.release_date || object.movie.first_air_date || '').slice(0, 4);
+            var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(title) + '&year=' + year;
+
+            Lampa.Loading.show();
+
+            network.silent(url, function (data) {
+                Lampa.Loading.hide();
+                if (data && data.length) {
+                    var items = [];
+                    data.forEach(function (item) {
+                        // Фільтрація виключно української озвучки
+                        if (item.file && /(ua|україн|ukr)/i.test(item.title || '')) {
+                            items.push({
+                                title: '🇺🇦 ' + item.title,
+                                file: item.file,
+                                quality: item.quality || 'HD'
+                            });
+                        }
+                    });
+
+                    if (items.length) {
+                        _this.showFiles(items, object.movie);
+                    } else {
+                        Lampa.Noty.show('Української озвучки не знайдено');
+                    }
+                } else {
+                    Lampa.Noty.show('Нічого не знайдено для цього фільму');
+                }
+            }, function () {
+                Lampa.Loading.hide();
+                Lampa.Noty.show('Помилка запиту до сервера');
+            });
+        };
+
+        // Створення вікна вибору файлів (як у великих плагінах)
+        this.showFiles = function (items, movie) {
+            Lampa.Component.add('davay_ua_list', function (object) {
                 var scroll = new Lampa.Scroll({ mask: true, over: true });
                 var html = $('<div class="directory-layers"></div>');
                 
                 this.create = function () {
-                    var m = object.movie;
-                    var title = m.title || m.name;
-                    var year = (m.release_date || m.first_air_date || '').slice(0, 4);
-                    var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(title) + '&year=' + year;
+                    var _comp = this;
+                    html.append(scroll.render());
 
-                    Lampa.Loading.show();
+                    items.forEach(function (item) {
+                        var card = Lampa.Template.get('button', {
+                            title: item.title,
+                            description: item.quality
+                        });
 
-                    network.silent(url, function (data) {
-                        Lampa.Loading.hide();
-                        html.append(scroll.render());
-
-                        if (data && data.length) {
-                            var any_found = false;
-                            data.forEach(function (item) {
-                                // Фільтр за ключовими словами UA
-                                if (item.file && /(ua|україн|ukr)/i.test(item.title || '')) {
-                                    any_found = true;
-                                    var card = Lampa.Template.get('button', { 
-                                        title: '🇺🇦 ' + item.title,
-                                        description: item.quality || 'HD' 
-                                    });
-                                    
-                                    card.on('hover:enter', function () {
-                                        Lampa.Player.play({
-                                            url: item.file,
-                                            title: item.title,
-                                            movie: m
-                                        });
-                                    });
-                                    scroll.append(card);
-                                }
+                        card.on('hover:enter', function () {
+                            Lampa.Player.play({
+                                url: item.file,
+                                title: item.title,
+                                movie: movie
                             });
-                            if (!any_found) _this.showEmpty('Озвучок UA не знайдено');
-                        } else {
-                            _this.showEmpty('Нічого не знайдено');
-                        }
-                    }, function () {
-                        Lampa.Loading.hide();
-                        Lampa.Noty.show('Помилка завантаження API');
+                        });
+
+                        scroll.append(card);
                     });
                 };
 
                 this.render = function () { return html; };
             });
-        },
 
-        showEmpty: function (msg) {
-            Lampa.Noty.show(msg);
-            Lampa.Controller.backward();
-        },
+            Lampa.Controller.push('davay_ua_list', { movie: movie });
+        };
 
-        // Слідкуємо за інтерфейсом (як у вашому файлі)
-        listenEvents: function () {
-            var _this = this;
+        // Метод вставки кнопки (адаптований під ваш full-start-new__buttons)
+        this.listen = function () {
             Lampa.Listener.follow('full', function (e) {
                 if (e.type == 'complite' || e.type == 'ready') {
-                    _this.addButton(e);
+                    var container = e.object.container.find('.full-start-new__buttons');
+                    
+                    if (container.length && !container.find('.button--davay-ua').length) {
+                        var button = $(`
+                            <div class="full-start__button selector button--davay-ua">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                                    <path d="M12 8V16M8 12H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                                <span>Давай UA</span>
+                            </div>
+                        `);
+
+                        button.on('hover:enter', function () {
+                            _this.search(e.data);
+                        });
+
+                        // Вставляємо строго після "Дивитись"
+                        var play_btn = container.find('.button--play');
+                        if (play_btn.length) play_btn.after(button);
+                        else container.prepend(button);
+
+                        // Оновлюємо навігацію, щоб пульт бачив кнопку
+                        if (Lampa.Controller.current().name == 'full_start') {
+                            Lampa.Controller.toggle('full_start');
+                        }
+                    }
                 }
             });
-        },
-
-        // Вставка кнопки у ваш специфічний блок full-start-new__buttons
-        addButton: function (e) {
-            var container = e.object.container.find('.full-start-new__buttons');
-            
-            if (container.length && !container.find('.button--davay-ua').length) {
-                var btn = $(`
-                    <div class="full-start__button selector button--davay-ua">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM11 16H13V14H11V16ZM11 12H13V8H11V12Z" fill="currentColor"/>
-                        </svg>
-                        <span>Давай UA</span>
-                    </div>
-                `);
-
-                btn.on('hover:enter', function () {
-                    Lampa.Controller.push('davay_ua_modal', {
-                        movie: e.data.movie
-                    });
-                });
-
-                // Ставимо після кнопки "Дивитись"
-                var playBtn = container.find('.button--play');
-                if (playBtn.length) playBtn.after(btn);
-                else container.prepend(btn);
-
-                // Оновлення навігації (важливо для пульта)
-                if (Lampa.Controller.current().name == 'full_start') {
-                    Lampa.Controller.toggle('full_start');
-                }
-            }
-        }
+        };
     };
 
-    // Запуск плагіна після готовності Lampa
+    // Глобальний запуск
     if (window.Lampa) {
-        UA_Worker.init();
-    } else {
-        Lampa.Listener.follow('app', function (e) {
-            if (e.type == 'ready') UA_Worker.init();
-        });
+        var plugin = new DavayUA();
+        plugin.init();
     }
-
 })();
