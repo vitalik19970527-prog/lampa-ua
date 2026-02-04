@@ -1,66 +1,60 @@
 (function () {
-    'use strict';
-
-    // Функція запуску
-    function initDavayUA() {
-        if (window.davay_ua_installed) return; // Захист від подвійного запуску
-        window.davay_ua_installed = true;
-
-        var DavayUA = function (object) {
+    var startPlugin = function () {
+        // Перевірка, чи не завантажені ми вже
+        if (window.dvua_done) return;
+        
+        // Додаємо компонент пошуку
+        Lampa.Component.add('davay_ua', function (object) {
             var network = new Lampa.Regard();
             var scroll = new Lampa.Scroll({mask: true, over: true});
             var html = $('<div class="directory-layers"></div>');
             
             this.create = function () {
-                var _this = this;
                 html.append(scroll.render());
-                var movie = object.movie || {};
-                var title = movie.title || movie.name || movie.original_title;
-                var year = (movie.release_date || movie.first_air_date || '').slice(0, 4);
-                var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(title) + '&year=' + year;
+                var m = object.movie || {};
+                var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(m.title || m.name) + '&year=' + (m.release_date || m.first_air_date || '').slice(0, 4);
                 
                 network.silent(url, function (data) {
                     if (data && data.length) {
                         data.forEach(function(item) {
-                            var t = (item.title || '').toLowerCase();
-                            // Фільтр на UA озвучку
-                            if (item.file && (t.indexOf('ua') > -1 || t.indexOf('україн') > -1)) {
+                            if (item.file && /(ua|україн)/i.test(item.title || '')) {
                                 var card = Lampa.Template.get('button', {title: '🇺🇦 ' + item.title});
-                                card.on('hover:enter', function () {
-                                    Lampa.Player.play({ url: item.file, title: item.title });
-                                });
+                                card.on('hover:enter', function () { Lampa.Player.play({ url: item.file, title: item.title }); });
                                 scroll.append(card);
                             }
                         });
-                    } else {
-                        Lampa.Noty.show('Нічого не знайдено');
-                    }
+                    } else { Lampa.Noty.show('Нічого не знайдено'); }
                 });
             };
             this.render = function () { return html; };
-        };
+        });
 
-        // Реєстрація компонента
-        Lampa.Component.add('davay_ua', DavayUA);
-
-        // Додавання кнопки в картку фільму
+        // Слухаємо відкриття картки фільму
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complite' || e.type == 'ready') {
-                var button = $('<div class="full-start__button selector"><span>Давай Українське</span></div>');
-                button.on('hover:enter', function () {
-                    Lampa.Controller.push('davay_ua', { movie: e.data.movie });
-                });
-                var container = e.object.container.find('.full-start__buttons');
-                if (container.length) container.append(button);
+                var btn = $('<div class="full-start__button selector"><span>Давай Українське</span></div>');
+                btn.on('hover:enter', function () { Lampa.Controller.push('davay_ua', { movie: e.data.movie }); });
+                e.object.container.find('.full-start__buttons').append(btn);
             }
         });
-    }
+        
+        window.dvua_done = true;
+    };
 
-    // Чекаємо на повне завантаження Lampa
-    var interval = setInterval(function () {
-        if (window.Lampa && Lampa.Component) {
-            clearInterval(interval);
-            initDavayUA();
-        }
-    }, 500);
+    // Гнучке очікування завантаження Lampa
+    if (window.Lampa && Lampa.Component) {
+        startPlugin();
+    } else {
+        document.addEventListener('window:load', startPlugin);
+        // Запасний варіант через таймер
+        var attempts = 0;
+        var timer = setInterval(function () {
+            attempts++;
+            if (window.Lampa && Lampa.Component) {
+                clearInterval(timer);
+                startPlugin();
+            }
+            if (attempts > 50) clearInterval(timer); // Стоп через 15 сек
+        }, 300);
+    }
 })();
