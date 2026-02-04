@@ -1,139 +1,113 @@
 (function () {
     'use strict';
 
-    // Допоміжні функції як у вашому файлі для сумісності
-    function startsWith(str, searchString) {
-      return str.lastIndexOf(searchString, 0) === 0;
-    }
-
-    function salt(input) {
-      var str = (input || '') + '';
-      var hash = 0;
-      for (var i = 0; i < str.length; i++) {
-        var c = str.charCodeAt(i);
-        hash = (hash << 5) - hash + c;
-        hash = hash & hash;
-      }
-      return Math.abs(hash).toString(16);
-    }
-
-    // Головна логіка плагіна
-    var DavayUA_Engine = function () {
-        this.network = new Lampa.Regard();
+    // Створюємо глобальний об'єкт плагіна, як у вашому прикладі
+    var DavayUA = {
+        name: 'Давай UA',
+        version: '2.1.0',
         
-        this.init = function () {
-            var _this = this;
-            // Реєструємо плагін у меню (як у вашому файлі)
-            Lampa.Plugins.add({
-                name: 'Давай UA',
-                version: '2.0.0',
-                description: 'Пошук української озвучки',
-                type: 'video',
-                author: 'Vitalik'
+        init: function () {
+            this.prepare();
+            this.start();
+        },
+
+        prepare: function () {
+            // Реєструємо компонент для вибору озвучок
+            Lampa.Component.add('davay_ua_modal', function (object) {
+                var network = new Lampa.Regard();
+                var scroll = new Lampa.Scroll({ mask: true, over: true });
+                var html = $('<div class="directory-layers"></div>');
+                
+                this.create = function () {
+                    var m = object.movie;
+                    var query = encodeURIComponent(m.title || m.name);
+                    var year = (m.release_date || m.first_air_date || '').slice(0, 4);
+                    
+                    Lampa.Loading.show();
+
+                    network.silent('https://api.lampa.stream/mod?title=' + query + '&year=' + year, function (data) {
+                        Lampa.Loading.hide();
+                        html.append(scroll.render());
+
+                        if (data && data.length) {
+                            var found = false;
+                            data.forEach(function (item) {
+                                if (item.file && /(ua|україн|ukr)/i.test(item.title || '')) {
+                                    found = true;
+                                    var card = Lampa.Template.get('button', { 
+                                        title: '🇺🇦 ' + item.title,
+                                        description: item.quality || 'HD' 
+                                    });
+                                    card.on('hover:enter', function () {
+                                        Lampa.Player.play({ url: item.file, title: item.title, movie: m });
+                                    });
+                                    scroll.append(card);
+                                }
+                            });
+                            if (!found) Lampa.Noty.show('Української озвучки не знайдено');
+                        } else {
+                            Lampa.Noty.show('Нічого не знайдено');
+                        }
+                    }, function () {
+                        Lampa.Loading.hide();
+                        Lampa.Noty.show('Помилка сервера');
+                    });
+                };
+                this.render = function () { return html; };
             });
+        },
 
-            this.listen();
-        };
-
-        this.listen = function () {
+        start: function () {
             var _this = this;
+            
+            // Використовуємо універсальний слухач, який точно спрацьовує у вашому форматі
             Lampa.Listener.follow('full', function (e) {
                 if (e.type == 'complite' || e.type == 'ready') {
-                    _this.insertButton(e);
+                    _this.inject(e);
                 }
             });
-        };
+        },
 
-        this.insertButton = function (e) {
+        inject: function (e) {
             var _this = this;
-            // Використовуємо ваш специфічний клас
+            // Ваша специфічна структура HTML
             var container = e.object.container.find('.full-start-new__buttons');
             
-            if (container.length && !container.find('.button--davay-ua-ultra').length) {
+            if (container.length && !container.find('.button--ua-exclusive').length) {
+                // Створюємо кнопку, ідентичну вашим за класами
                 var btn = $(`
-                    <div class="full-start__button selector button--davay-ua-ultra">
+                    <div class="full-start__button selector button--ua-exclusive" style="background: rgba(0, 100, 255, 0.3) !important; border: 1px solid #00c6ff !important;">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;">
-                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="gold" stroke="currentColor" stroke-width="1"/>
+                            <rect width="24" height="12" fill="#0057B7"/>
+                            <rect y="12" width="24" height="12" fill="#FFD700"/>
                         </svg>
                         <span>Давай UA</span>
                     </div>
                 `);
 
                 btn.on('hover:enter', function () {
-                    _this.startSearch(e.data);
+                    Lampa.Controller.push('davay_ua_modal', { movie: e.data.movie });
                 });
 
-                // Вставляємо строго після "Дивитись"
+                // Вставляємо ПЕРЕД кнопкою "Дивитись", щоб вона була першою і ви її точно побачили
                 var playBtn = container.find('.button--play');
-                if (playBtn.length) playBtn.after(btn);
+                if (playBtn.length) playBtn.before(btn);
                 else container.prepend(btn);
 
-                // Примусове оновлення навігації (як у професійних модах)
-                Lampa.Controller.add('full_start', {
-                    toggle: function () {
-                        Lampa.Controller.collectionSet(container);
-                        Lampa.Controller.move('right');
-                    }
-                });
-            }
-        };
-
-        this.startSearch = function (data) {
-            var _this = this;
-            var m = data.movie;
-            var title = m.title || m.name;
-            var year = (m.release_date || m.first_air_date || '').slice(0, 4);
-            var query = encodeURIComponent(title);
-            
-            Lampa.Loading.show();
-
-            this.network.silent('https://api.lampa.stream/mod?title=' + query + '&year=' + year, function (results) {
-                Lampa.Loading.hide();
-                if (results && results.length) {
-                    var ua_files = results.filter(function(f) {
-                        return /(ua|україн|ukr)/i.test(f.title || '');
-                    });
-
-                    if (ua_files.length) {
-                        _this.showModal(ua_files, m);
-                    } else {
-                        Lampa.Noty.show('Української озвучки не знайдено');
-                    }
-                } else {
-                    Lampa.Noty.show('Нічого не знайдено');
+                // Примусове оновлення фокусу
+                if (Lampa.Controller.current().name == 'full_start') {
+                    Lampa.Controller.toggle('full_start');
                 }
-            }, function () {
-                Lampa.Loading.hide();
-                Lampa.Noty.show('Помилка API');
-            });
-        };
-
-        this.showModal = function (items, movie) {
-            Lampa.Component.add('ua_list_view', function (object) {
-                var scroll = new Lampa.Scroll({ mask: true, over: true });
-                var html = $('<div class="directory-layers"></div>');
-                this.create = function () {
-                    html.append(scroll.render());
-                    items.forEach(function (item) {
-                        var card = Lampa.Template.get('button', {
-                            title: item.title,
-                            description: item.quality || 'HD'
-                        });
-                        card.on('hover:enter', function () {
-                            Lampa.Player.play({ url: item.file, title: item.title, movie: movie });
-                        });
-                        scroll.append(card);
-                    });
-                };
-                this.render = function () { return html; };
-            });
-            Lampa.Controller.push('ua_list_view', { movie: movie });
-        };
+            }
+        }
     };
 
-    // Офіційний запуск через ядро
+    // Запуск плагіна з перевіркою (як у вашому файлі)
     if (window.Lampa) {
-        var engine = new DavayUA_Engine();
-        engine.init();
+        DavayUA.init();
+    } else {
+        Lampa.Listener.follow('app', function (e) {
+            if (e.type == 'ready') DavayUA.init();
+        });
     }
 })();
