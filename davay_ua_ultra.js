@@ -1,16 +1,5 @@
 (function () {
     'use strict';
-    
-    // Реєстрація плагіна - це має бути ПЕРШИМ, що бачить Lampa
-    if (window.Lampa && Lampa.Plugins) {
-        Lampa.Plugins.add({
-            name: 'Давай Українське',
-            version: '1.0.5',
-            description: 'Пошук української озвучки',
-            type: 'video',
-            author: 'Vitalik'
-        });
-    }
 
     function startPlugin() {
         var DavayUA = function (object) {
@@ -29,7 +18,8 @@
                 network.silent(url, function (data) {
                     if (data && data.length) {
                         data.forEach(function(item) {
-                            if (item.file && (item.title.toLowerCase().indexOf('ua') > -1 || item.title.toLowerCase().indexOf('україн') > -1)) {
+                            var t = (item.title || '').toLowerCase();
+                            if (item.file && (t.indexOf('ua') > -1 || t.indexOf('україн') > -1)) {
                                 var card = Lampa.Template.get('button', {title: '🇺🇦 ' + item.title});
                                 card.on('hover:enter', function () {
                                     Lampa.Player.play({ url: item.file, title: item.title });
@@ -59,6 +49,11 @@
         });
     }
 
-    if (window.Lampa) startPlugin();
-    else Lampa.Listener.follow('app', function (e) { if (e.type == 'ready') startPlugin(); });
+    // Запуск тільки після повної готовності Lampa
+    var wait = setInterval(function() {
+        if (window.Lampa && Lampa.Component) {
+            clearInterval(wait);
+            startPlugin();
+        }
+    }, 200);
 })();
