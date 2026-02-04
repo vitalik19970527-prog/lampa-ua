@@ -1,7 +1,11 @@
 (function () {
     'use strict';
 
-    function startPlugin() {
+    // Функція запуску
+    function initDavayUA() {
+        if (window.davay_ua_installed) return; // Захист від подвійного запуску
+        window.davay_ua_installed = true;
+
         var DavayUA = function (object) {
             var network = new Lampa.Regard();
             var scroll = new Lampa.Scroll({mask: true, over: true});
@@ -19,6 +23,7 @@
                     if (data && data.length) {
                         data.forEach(function(item) {
                             var t = (item.title || '').toLowerCase();
+                            // Фільтр на UA озвучку
                             if (item.file && (t.indexOf('ua') > -1 || t.indexOf('україн') > -1)) {
                                 var card = Lampa.Template.get('button', {title: '🇺🇦 ' + item.title});
                                 card.on('hover:enter', function () {
@@ -35,8 +40,10 @@
             this.render = function () { return html; };
         };
 
+        // Реєстрація компонента
         Lampa.Component.add('davay_ua', DavayUA);
 
+        // Додавання кнопки в картку фільму
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complite' || e.type == 'ready') {
                 var button = $('<div class="full-start__button selector"><span>Давай Українське</span></div>');
@@ -49,11 +56,11 @@
         });
     }
 
-    // Запуск тільки після повної готовності Lampa
-    var wait = setInterval(function() {
+    // Чекаємо на повне завантаження Lampa
+    var interval = setInterval(function () {
         if (window.Lampa && Lampa.Component) {
-            clearInterval(wait);
-            startPlugin();
+            clearInterval(interval);
+            initDavayUA();
         }
-    }, 200);
+    }, 500);
 })();
