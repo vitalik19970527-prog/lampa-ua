@@ -1,27 +1,29 @@
 (function () {
     'use strict';
 
-    var DavayUA_Project = {
+    var DavayUA = {
+        name: 'Давай UA',
+        version: '3.0.0',
+        
         init: function () {
             this.registerComponent();
-            this.startObserver();
+            this.listen();
         },
 
-        // Створюємо окреме вікно для вибору озвучок
         registerComponent: function () {
-            Lampa.Component.add('ua_picker', function (object) {
+            Lampa.Component.add('davay_ua_modal', function (object) {
                 var network = new Lampa.Regard();
                 var scroll = new Lampa.Scroll({ mask: true, over: true });
                 var html = $('<div class="directory-layers"></div>');
                 
                 this.create = function () {
-                    var m = object.movie;
-                    var title = m.title || m.name;
+                    var m = object.movie || {};
+                    var query = encodeURIComponent(m.title || m.name);
                     var year = (m.release_date || m.first_air_date || '').slice(0, 4);
                     
                     Lampa.Loading.show();
 
-                    network.silent('https://api.lampa.stream/mod?title=' + encodeURIComponent(title) + '&year=' + year, function (data) {
+                    network.silent('https://api.lampa.stream/mod?title=' + query + '&year=' + year, function (data) {
                         Lampa.Loading.hide();
                         html.append(scroll.render());
 
@@ -51,56 +53,46 @@
             });
         },
 
-        // Метод "Хижак" - стежить за появою блоку кнопок незалежно від подій системи
-        startObserver: function () {
+        listen: function () {
             var _this = this;
-            var observer = new MutationObserver(function (mutations) {
-                var container = $('.full-start-new__buttons'); // Ваш специфічний клас
-                if (container.length && !container.find('.button--ua-final').length) {
-                    _this.injectButton(container);
+            Lampa.Listener.follow('full', function (e) {
+                // ПЕРЕВІРКА: додаємо захист від undefined
+                if ((e.type == 'complite' || e.type == 'ready') && e.object && e.object.container) {
+                    _this.inject(e);
                 }
             });
-
-            observer.observe(document.body, { childList: true, subtree: true });
         },
 
-        injectButton: function (container) {
-            var _this = this;
-            // Створюємо кнопку, ідентичну вашим за структурою
-            var btn = $(`
-                <div class="full-start__button selector button--ua-final" style="border: 2px solid #ffd700 !important; background: rgba(0, 87, 183, 0.2) !important;">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect width="24" height="12" fill="#0057B7"/>
-                        <rect y="12" width="24" height="12" fill="#FFD700"/>
-                    </svg>
-                    <span>Давай UA</span>
-                </div>
-            `);
+        inject: function (e) {
+            var container = e.object.container.find('.full-start-new__buttons');
+            
+            if (container.length && !container.find('.button--ua-final').length) {
+                var btn = $(`
+                    <div class="full-start__button selector button--ua-final" style="border: 2px solid #ffd700 !important; background: rgba(0, 87, 183, 0.4) !important;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px; vertical-align: middle;">
+                            <rect width="24" height="12" fill="#0057B7"/>
+                            <rect y="12" width="24" height="12" fill="#FFD700"/>
+                        </svg>
+                        <span style="vertical-align: middle;">Давай UA</span>
+                    </div>
+                `);
 
-            btn.on('hover:enter', function () {
-                // Беремо дані фільму з поточної активності
-                var active = Lampa.Activity.active();
-                var movieData = active.card || (active.object ? active.object.movie : null);
-                
-                if (movieData) {
-                    Lampa.Controller.push('ua_picker', { movie: movieData });
-                } else {
-                    Lampa.Noty.show('Дані фільму ще не завантажені');
+                btn.on('hover:enter', function () {
+                    Lampa.Controller.push('davay_ua_modal', { movie: e.data.movie });
+                });
+
+                // Вставляємо першою
+                container.prepend(btn);
+
+                // Оновлюємо навігацію
+                if (Lampa.Controller.current().name == 'full_start') {
+                    Lampa.Controller.toggle('full_start');
                 }
-            });
-
-            // Ставимо кнопку ПЕРШОЮ
-            container.prepend(btn);
-
-            // Оновлюємо навігацію, щоб кнопка була клікабельною
-            if (Lampa.Controller.current().name == 'full_start') {
-                Lampa.Controller.toggle('full_start');
             }
         }
     };
 
-    // Запуск
     if (window.Lampa) {
-        DavayUA_Project.init();
+        DavayUA.init();
     }
 })();
