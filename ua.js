@@ -1,34 +1,48 @@
 (function () {
     'use strict';
 
+    console.log('UA PLUGIN: Ініціалізація v106');
+
     function createUAButton() {
-        // Шукаємо контейнер для кнопок
+        // Контейнери кнопок у версії 3.1.5
         var container = $('.full-start-new__buttons, .full-start__buttons');
         
-        // Якщо знайшли і нашої кнопки ще немає
         if (container.length && !$('.button--ua-final').length) {
-            console.log('UA PLUGIN: Додаю кнопку');
+            console.log('UA PLUGIN: Спроба додати кнопку');
             
-            var btn = $('<div class="full-start__button selector button--ua-final" style="background: #0057B7 !important; border: 2px solid #FFD700 !important; border-radius: 5px; cursor: pointer; margin-right: 10px; display: flex; align-items: center; justify-content: center; padding: 0 20px; height: 3.5em;"><span style="font-weight: bold; color: #fff;">🇺🇦 ДАВАЙ UA</span></div>');
+            var btn = $('<div class="full-start__button selector button--ua-final" style="background: #0057B7 !important; border: 2px solid #FFD700 !important; color: #fff !important; padding: 10px 20px; margin-right: 10px; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-weight: bold;"><span>🇺🇦 ДАВАЙ UA</span></div>');
 
-            // Обробка натискання
             btn.on('click', function (e) {
                 e.preventDefault();
-                var active = Lampa.Activity.active();
-                var movie = active.card || (active.object ? active.object.movie : {});
+                console.log('UA PLUGIN: Кнопку натиснуто');
                 
-                console.log('UA PLUGIN: Пошук для', movie.title || movie.name);
-                window.runUASearch(movie);
+                // Безпечне отримання даних фільму
+                var movie = {};
+                try {
+                    var active = Lampa.Activity.active();
+                    movie = active.card || (active.object ? active.object.movie : {});
+                } catch(err) {
+                    console.log('UA PLUGIN: Помилка отримання картки', err);
+                }
+                
+                if (movie.title || movie.name) {
+                    window.runUASearch(movie);
+                } else {
+                    alert('Не вдалося визначити назву фільму');
+                }
             });
 
             container.prepend(btn);
             
-            // Спроба оновити навігацію пульта без помилок
+            // Навігація для пульта без виклику .current()
             try {
-                if (window.Lampa && Lampa.Controller && typeof Lampa.Controller.toggle === 'function') {
-                    Lampa.Controller.toggle('full_start');
+                if (Lampa.Controller && typeof Lampa.Controller.add === 'function') {
+                    Lampa.Controller.add('full_start', {
+                        toggle: function () {},
+                        render: function () {}
+                    });
                 }
-            } catch(err) {}
+            } catch(e) {}
         }
     }
 
@@ -37,50 +51,49 @@
         var year = (movie.release_date || movie.first_air_date || '').slice(0, 4);
         var url = 'https://api.lampa.stream/mod?title=' + encodeURIComponent(title) + '&year=' + year;
 
-        console.log('UA PLUGIN: Запит:', url);
+        console.log('UA PLUGIN: Шукаю:', title);
 
+        // НЕ використовуємо Lampa.Loading, бо він викликає помилку
         $.ajax({
             url: url,
             method: 'GET',
             dataType: 'json',
+            timeout: 7000,
             success: function(data) {
                 if (data && data.length) {
-                    // Фільтруємо UA
                     var items = data.filter(function(i) { 
                         return /(ua|україн|ukr)/i.test(i.title || ''); 
                     });
 
                     if (items.length) {
-                        // Використовуємо Lampa.Select, він зазвичай стабільний
-                        Lampa.Select.show({
-                            title: 'Оберіть озвучку',
-                            items: items.map(function(i) { 
-                                return { title: i.title, file: i.file }; 
-                            }),
-                            onSelect: function(item) {
-                                Lampa.Player.play({ 
-                                    url: item.file, 
-                                    title: item.title, 
-                                    movie: movie 
-                                });
-                            },
-                            onBack: function() {
-                                try { Lampa.Controller.toggle('full_start'); } catch(e) {}
-                            }
-                        });
-                    } else {
-                        alert('Української озвучки не знайдено');
-                    }
-                } else {
-                    alert('Результатів не знайдено');
-                }
+                        // Використовуємо Lampa.Select - він стандартний
+                        try {
+                            Lampa.Select.show({
+                                title: 'Українська озвучка',
+                                items: items.map(function(i) { 
+                                    return { title: i.title, file: i.file }; 
+                                }),
+                                onSelect: function(item) {
+                                    Lampa.Player.play({ 
+                                        url: item.file, 
+                                        title: item.title, 
+                                        movie: movie 
+                                    });
+                                }
+                            });
+                        } catch(e) {
+                            // Якщо Select зламався, просто запускаємо перше відео
+                            Lampa.Player.play({ url: items[0].file, title: items[0].title, movie: movie });
+                        }
+                    } else alert('UA озвучки не знайдено');
+                } else alert('Нічого не знайдено');
             },
             error: function() {
-                alert('Помилка запиту до сервера');
+                alert('Помилка запиту до API');
             }
         });
     };
 
-    // Запуск через інтервал
+    // Запускаємо перевірку появи кнопок кожну секунду
     setInterval(createUAButton, 1000);
 })();
